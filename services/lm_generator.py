@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Any, Dict
 from groq import Groq
 
-from config import LETTERS_DIR
+# On importe la fonction de résolution de chemins au lieu de la constante fixe
+from services.history_store import get_user_data_paths
 
 MODEL_NAME = "llama-3.3-70b-versatile"
 
@@ -19,9 +20,7 @@ def get_groq_client() -> Groq:
             pass
 
     if not api_key:
-        raise ValueError(
-            "La clé GROQ_API_KEY est manquante."
-        )
+        raise ValueError("La clé GROQ_API_KEY est manquante.")
     return Groq(api_key=api_key)
 
 
@@ -30,8 +29,9 @@ def generate_cover_letter(
     offer: Dict[str, Any],
     lm_template: str,
     entry_id: str,
+    user_id: str = "default",  # 👈 Ajout du paramètre user_id
 ) -> str:
-    """Génère une lettre de motivation personnalisée via Groq et la sauvegarde sur disque."""
+    """Génère une lettre de motivation personnalisée via Groq et la sauvegarde dans le dossier user."""
     client = get_groq_client()
 
     system_instruction = (
@@ -64,9 +64,9 @@ Description : {offer.get('description', '')[:3000]}
 
     letter_text = response.choices[0].message.content.strip()
 
-    # Sauvegarde locale de la lettre
-    LETTERS_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = LETTERS_DIR / f"LM_{entry_id}.txt"
+    # 📁 Sauvegarde dans le dossier spécifique de l'utilisateur : data/<user_id>/letters/
+    _, letters_dir = get_user_data_paths(user_id)
+    file_path = letters_dir / f"LM_{entry_id}.txt"
     file_path.write_text(letter_text, encoding="utf-8")
 
     return str(file_path.as_posix())

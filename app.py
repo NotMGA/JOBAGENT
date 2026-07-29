@@ -35,9 +35,15 @@ if os.path.exists(CSS_FILE):
     with open(CSS_FILE, "r", encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# Initialisation du Session State
+# 🔑 1. Initialisation de l'ID unique temporaire par session
+if "user_id" not in st.session_state:
+    st.session_state.user_id = str(uuid.uuid4())
+
+user_id = st.session_state.user_id
+
+# Initialisation du Session State pour le profil utilisateur
 if "cv_text" not in st.session_state or "lm_template" not in st.session_state:
-    saved_cv, saved_lm = get_user_profile()
+    saved_cv, saved_lm = get_user_profile(user_id)
     st.session_state.cv_text = saved_cv
     st.session_state.lm_template = saved_lm
 
@@ -73,8 +79,8 @@ def render_dashboard_metrics(history_df: pd.DataFrame) -> None:
         st.metric(label="📝 Lettres générées", value=total_letters)
 
 
-def render_history_section() -> None:
-    history = load_history()
+def render_history_section(user_id: str) -> None:
+    history = load_history(user_id)
 
     if history.empty:
         st.info("💡 Aucune candidature analysée pour le moment. Renseignez vos critères dans le menu à gauche et lancez le traitement !")
@@ -90,7 +96,7 @@ def render_history_section() -> None:
         st.subheader("📋 Historique des recherches")
     with col_clear:
         if st.button("🗑️ Effacer l'historique", type="secondary", width="stretch"):
-            clear_history()
+            clear_history(user_id)
             st.toast("L'historique a été réinitialisé.", icon="🧹")
             st.rerun()
 
@@ -149,7 +155,7 @@ def render_history_section() -> None:
         if str(row.get("lm_generee")).lower() != "oui" or not row.get("chemin_lm"):
             continue
 
-        letter_content = read_letter_file(str(row["chemin_lm"]))
+        letter_content = read_letter_file(str(row["chemin_lm"]), user_id)
         if not letter_content:
             continue
 
@@ -207,7 +213,7 @@ with st.sidebar:
         try:
             extracted_cv = extract_text_from_pdf(cv_file.read())
             st.session_state.cv_text = extracted_cv
-            save_cv(extracted_cv)
+            save_cv(extracted_cv, user_id)
             st.toast("CV importé avec succès !", icon="✅")
         except ValueError as exc:
             st.error(str(exc))
@@ -235,7 +241,7 @@ with st.sidebar:
                 imported_lm = lm_file.read().decode("utf-8")
 
             st.session_state.lm_template = imported_lm
-            save_lm_template(imported_lm)
+            save_lm_template(imported_lm, user_id)
             st.toast("Modèle de lettre mis à jour !", icon="📄")
         except Exception as exc:
             st.error(f"Erreur d'importation LM : {exc}")
@@ -249,7 +255,7 @@ with st.sidebar:
 
     if lm_template_input != st.session_state.lm_template:
         st.session_state.lm_template = lm_template_input
-        save_lm_template(lm_template_input)
+        save_lm_template(lm_template_input, user_id)
 
     st.divider()
 
@@ -294,8 +300,8 @@ if process_button:
         st.error("Veuillez entrer au moins un mot-clé de recherche.")
     else:
         try:
-            # 1. Charger et nettoyer la liste des URLs déjà enregistrées dans l'historique
-            history_df = load_history()
+            # 1. Charger et nettoyer la liste des URLs déjà enregistrées dans l'historique de cette session
+            history_df = load_history(user_id)
             existing_urls = set()
             if not history_df.empty and "url_offre" in history_df.columns:
                 existing_urls = {
@@ -362,18 +368,20 @@ if process_button:
                                     offer,
                                     st.session_state.lm_template,
                                     entry_id,
+                                    user_id,  # Transmis si votre service gère le sous-dossier user_id
                                 )
                                 lm_generated = True
                             else:
                                 st.caption("&nbsp;&nbsp;&nbsp;&nbsp;ℹ️ Pas de modèle de lettre configuré : génération ignorée.")
 
-                        # Enregistrement dans l'historique
+                        # Enregistrement dans l'historique propre à user_id
                         append_entry(
                             offer,
                             score,
                             lm_generated,
                             lm_path,
                             entry_id=entry_id,
+                            user_id=user_id,
                         )
 
                         # 3. Mettre à jour le set local immédiatement pour éviter les doublons dans la même session
@@ -391,5 +399,6 @@ if process_button:
 
         except Exception as exc:
             st.error(f"Une erreur est survenue pendant le traitement : {exc}")
-# Affichage du dashboard/historique
-render_history_section()
+
+# Affichage du dashboard/historique spécifique à la session
+render_history_section(user_id)
