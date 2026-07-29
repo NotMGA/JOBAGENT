@@ -1,6 +1,6 @@
 streamlit>=1.32
 pandas>=2.0
 pypdf>=4.0
-ollama>=0.3
 requests>=2.31
 python-dotenv>=1.0
+groq
