@@ -1,67 +1,72 @@
-import json
+import os
 import re
+from typing import Any, Dict, Tuple
+from groq import Groq
 
-import ollama
-
-from config import OLLAMA_HOST, OLLAMA_MODEL
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 
-def _parse_score_response(response_text: str) -> tuple[float, str]:
-    """Parse LLM response to extract score and justification."""
-    text = response_text.strip()
-
-    try:
-        data = json.loads(text)
-        score = float(data.get("score", 0))
-        justification = str(data.get("justification", ""))
-        return min(max(score, 0), 10), justification
-    except (json.JSONDecodeError, ValueError, TypeError):
-        pass
-
-    json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
-    if json_match:
+def get_groq_client() -> Groq:
+    """Récupère le client Groq depuis l'environnement ou les secrets Streamlit."""
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
         try:
-            data = json.loads(json_match.group())
-            score = float(data.get("score", 0))
-            justification = str(data.get("justification", ""))
-            return min(max(score, 0), 10), justification
-        except (json.JSONDecodeError, ValueError, TypeError):
+            import streamlit as st
+            api_key = st.secrets.get("GROQ_API_KEY")
+        except Exception:
             pass
 
-    score_match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*10", text)
-    if score_match:
-        return min(max(float(score_match.group(1)), 0), 10), text
-
-    number_match = re.search(r"\b(\d+(?:\.\d+)?)\b", text)
-    if number_match:
-        return min(max(float(number_match.group(1)), 0), 10), text
-
-    return 0.0, "Score non interprétable"
+    if not api_key:
+        raise ValueError(
+            "La clé GROQ_API_KEY est manquante. "
+            "Veuillez la configurer dans vos variables d'environnement ou secrets Streamlit."
+        )
+    return Groq(api_key=api_key)
 
 
-def score_coherence(cv_text: str, job: dict) -> tuple[float, str]:
-    """Score CV/job offer coherence from 0 to 10 using Ollama."""
-    prompt = f"""Tu es un expert RH. Évalue la cohérence entre ce CV et cette offre d'emploi.
+def score_coherence(cv_text: str, offer: Dict[str, Any]) -> Tuple[float, str]:
+    """Analyse la adéquation entre le CV et l'offre via Groq."""
+    client = get_groq_client()
 
-Réponds UNIQUEMENT avec un JSON valide au format :
-{{"score": <nombre entre 0 et 10>, "justification": "<explication courte en français>"}}
+    prompt = f"""Tu es un recruteur expert. Évalue la correspondance entre le CV et l'offre d'emploi ci-dessous.
 
---- CV ---
-{cv_text[:4000]}
+    ### CV DU CANDIDAT :
+    {cv_text}
 
---- OFFRE ---
-Titre : {job.get("titre", "")}
-Entreprise : {job.get("entreprise", "")}
-Lieu : {job.get("lieu", "")}
-Description : {job.get("description", "")[:3000]}
-"""
+    ### OFFRE D'EMPLOI :
+    Titre : {offer.get('titre', '')}
+    Entreprise : {offer.get('entreprise', '')}
+    Description : {offer.get('description', '')}
 
-    client = ollama.Client(host=OLLAMA_HOST)
-    response = client.chat(
-        model=OLLAMA_MODEL,
+    ### CONSIGNES STRICTES :
+    1. Attribue une note de 0.0 à 10.0 sur la cohérence globale du profil avec l'offre.
+    2. Donne une justification très courte (2 à 3 phrases maximum).
+    3. Respecte IMPÉRATIVEMENT le format de réponse suivant sur deux lignes :
+    SCORE: <note>/10
+    JUSTIFICATION: <explication>
+    """
+
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
         messages=[{"role": "user", "content": prompt}],
-        options={"temperature": 0.2},
+        temperature=0.2,
     )
 
-    content = response["message"]["content"]
-    return _parse_score_response(content)
+    content = response.choices[0].message.content.strip()
+
+    # Extraction du score et de la justification
+    score = 0.0
+    justification = content
+
+    score_match = re.search(r"SCORE:\s*([\d\.]+)", content, re.IGNORECASE)
+    if score_match:
+        try:
+            score = float(score_match.group(1))
+        except ValueError:
+            score = 0.0
+
+    justif_match = re.search(r"JUSTIFICATION:\s*(.*)", content, re.IGNORECASE | re.DOTALL)
+    if justif_match:
+        justification = justif_match.group(1).strip()
+
+    return score, justification
