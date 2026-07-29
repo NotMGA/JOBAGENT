@@ -61,7 +61,7 @@ def render_history_table() -> None:
     # --- Bouton d'effacement de l'historique ---
     col_space, col_clear = st.columns([4, 1])
     with col_clear:
-        if st.button("🗑️ Effacer l'historique", type="secondary", use_container_width=True):
+        if st.button("🗑️ Effacer l'historique", type="secondary", width="stretch"):
             clear_history()
             st.success("L'historique a été réinitialisé.")
             st.rerun()
@@ -104,7 +104,7 @@ def render_history_table() -> None:
                 display_text="Postuler",
             ),
         },
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -127,7 +127,7 @@ def render_history_table() -> None:
             )
         with col2:
             if row.get("url_offre"):
-                st.link_button("Postuler", str(row["url_offre"]), use_container_width=True)
+                st.link_button("Postuler", str(row["url_offre"]), width="stretch")
         with col3:
             safe_title = sanitize_filename(str(row['titre']))
             safe_company = sanitize_filename(str(row['entreprise']))
@@ -139,7 +139,7 @@ def render_history_table() -> None:
                 file_name=filename,
                 mime="text/plain",
                 key=f"dl_{row['id']}",
-                use_container_width=True,
+                width="stretch",
             )
 
     if not has_letters:
@@ -166,7 +166,7 @@ with st.sidebar:
     # --- Visualisation du CV ---
     if st.session_state.cv_text:
         st.caption("✅ CV chargé en mémoire.")
-        with st.popover("👁️ Voir le CV extrait", use_container_width=True):
+        with st.popover("👁️ Voir le CV extrait", width="stretch"):
             st.text_area(
                 "Texte brut extrait du CV",
                 value=st.session_state.cv_text,
@@ -237,7 +237,7 @@ with st.sidebar:
         "🚀 Lancer le traitement",
         type="primary",
         disabled=not can_process,
-        use_container_width=True,
+        width="stretch",
     )
 
 
