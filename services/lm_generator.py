@@ -1,59 +1,69 @@
+import os
 from pathlib import Path
+from typing import Any, Dict
+from groq import Groq
 
-import ollama
+from config import LETTERS_DIR
 
-from config import BASE_DIR, LETTRES_DIR, OLLAMA_HOST, OLLAMA_MODEL
+MODEL_NAME = "llama-3.3-70b-versatile"
+
+
+def get_groq_client() -> Groq:
+    """Récupère le client Groq depuis l'environnement ou les secrets Streamlit."""
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("GROQ_API_KEY")
+        except Exception:
+            pass
+
+    if not api_key:
+        raise ValueError(
+            "La clé GROQ_API_KEY est manquante."
+        )
+    return Groq(api_key=api_key)
 
 
 def generate_cover_letter(
     cv_text: str,
-    job: dict,
+    offer: Dict[str, Any],
     lm_template: str,
     entry_id: str,
 ) -> str:
-    """Generate a personalized cover letter and save it to disk."""
-    LETTRES_DIR.mkdir(parents=True, exist_ok=True)
+    """Génère une lettre de motivation personnalisée via Groq et la sauvegarde sur disque."""
+    client = get_groq_client()
 
-    prompt = f"""Tu es un assistant de rédaction ultra-précis. 
+    prompt = f"""Tu es un assistant rédactionnel professionnel.
+    Rédige une lettre de motivation personnalisée en français en t'inspirant de la lettre type fournie, en adaptant le contenu aux compétences du CV et aux exigences de l'offre d'emploi.
 
-Ta mission est de compléter le MODÈLE DE LETTRE fourni en remplaçant UNIQUEMENT les variables entre accolades : 
-- {{{{Entreprise}}}}
-- {{{{Poste}}}}
-- {{{{Intro_Entreprise}}}}
-- {{{{Pourquoi_Moi}}}}
+    ### CV DU CANDIDAT :
+    {cv_text}
 
---- RÈGLES STRICTES DE REMPLISSAGE ---
-1. Conserve TOUT le reste du texte de la lettre MOT POUR MOT. Ne modifie pas les paragraphes concernant Foundever, le Futuroscope, Angular/Java/Spring, ni les formules de politesse.
-2. Remplis les variables ainsi :
-   - {{{{Entreprise}}}} : Le nom de l'entreprise qui recrute (ou "votre entreprise" si non spécifié).
-   - {{{{Poste}}}} : Le titre exact du poste de l'offre d'emploi.
-   - {{{{Intro_Entreprise}}}} : Une à deux phrases courtes montrant que tu as compris l'activité de l'entreprise ou le secteur de l'offre, et pourquoi cela donne envie d'y postuler.
-   - {{{{Pourquoi_Moi}}}} : Une à deux phrases percutantes faisant le pont direct entre une compétence RÉELLE du CV (et uniquement du CV !) et un besoin clé mentionné dans la description de l'offre d'emploi.
-3. INTERDICTION d'inventer des compétences, outils ou diplômes qui ne sont pas dans le CV.
-4. Le résultat final doit être une lettre fluide, prête à l'envoi. Ne renvoie AUCUN commentaire, uniquement la lettre complétée.
+    ### OFFRE D'EMPLOI :
+    Titre : {offer.get('titre', '')}
+    Entreprise : {offer.get('entreprise', '')}
+    Description : {offer.get('description', '')}
 
---- MODÈLE DE LETTRE DE DEPART ---
-{lm_template}
+    ### LETTRE TYPE DE RÉFÉRENCE :
+    {lm_template}
 
---- CV (SOURCE UNIQUE DE VÉRITÉ) ---
-{cv_text[:4000]}
+    ### INSTRUCTIONS :
+    - Rédige uniquement le corps de la lettre de motivation.
+    - Sois percutant, professionnel et sans formules génériques superflues.
+    """
 
---- OFFRE D'EMPLOI ---
-Titre : {job.get("titre", "")}
-Entreprise : {job.get("entreprise", "")}
-Lieu : {job.get("lieu", "")}
-Description : {job.get("description", "")[:3000]}
-"""
-
-    client = ollama.Client(host=OLLAMA_HOST)
-    response = client.chat(
-        model=OLLAMA_MODEL,
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
         messages=[{"role": "user", "content": prompt}],
-        options={"temperature": 0.2},  # Température très basse (0.2) pour un respect strict des consignes et du texte d'origine
+        temperature=0.5,
     )
 
-    letter_text = response["message"]["content"].strip()
-    file_path = LETTRES_DIR / f"{entry_id}.txt"
+    letter_text = response.choices[0].message.content.strip()
+
+    # Sauvegarde locale de la lettre générée
+    LETTERS_DIR.mkdir(parents=True, exist_ok=True)
+    file_path = LETTERS_DIR / f"LM_{entry_id}.txt"
     file_path.write_text(letter_text, encoding="utf-8")
 
-    return str(file_path.relative_to(BASE_DIR))
+    return str(file_path)

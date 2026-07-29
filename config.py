@@ -3,6 +3,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 LETTRES_DIR = DATA_DIR / "lettres"
+LETTERS_DIR = LETTRES_DIR  # Alias pour garder la compatibilité avec lm_generator.py
+
 HISTORY_CSV = BASE_DIR / "historique_candidatures.csv"
 
 OLLAMA_MODEL = "llama3.2"
