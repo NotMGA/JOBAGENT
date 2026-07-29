@@ -46,7 +46,6 @@ def format_publication_date(date_value: str) -> str:
 
 
 def sanitize_filename(name: str) -> str:
-    """Nettoie une chaîne pour former un nom de fichier valide sur tous les OS."""
     clean = re.sub(r"[^\w\s-]", "", name, flags=re.UNICODE)
     return re.sub(r"[-\s]+", "_", clean).strip("_")
 
@@ -174,20 +173,29 @@ with st.sidebar:
                 disabled=True,
             )
 
-    # --- Importation de la LM Type ---
-    lm_file = st.file_uploader("Importer une LM type (.txt)", type=["txt"])
+    st.divider()
+
+    # --- Importation de la LM Type (TXT ou PDF) ---
+    lm_file = st.file_uploader("Importer une LM type (TXT ou PDF, optionnel)", type=["txt", "pdf"])
     if lm_file is not None:
-        imported_lm = lm_file.read().decode("utf-8")
-        st.session_state.lm_template = imported_lm
-        save_lm_template(imported_lm)
-        st.success("Lettre type importée et sauvegardée !")
+        try:
+            if lm_file.name.endswith(".pdf"):
+                imported_lm = extract_text_from_pdf(lm_file.read())
+            else:
+                imported_lm = lm_file.read().decode("utf-8")
+
+            st.session_state.lm_template = imported_lm
+            save_lm_template(imported_lm)
+            st.success("Lettre type importée et sauvegardée !")
+        except Exception as exc:
+            st.error(f"Erreur d'importation LM : {exc}")
 
     # --- Zone de texte de la LM Type ---
     lm_template_input = st.text_area(
-        "Lettre de Motivation type",
+        "Lettre de Motivation type (optionnel)",
         value=st.session_state.lm_template,
-        height=200,
-        placeholder="Collez ici votre modèle de lettre de motivation...",
+        height=180,
+        placeholder="Collez ici votre modèle (facultatif si vous souhaitez juste évaluer les offres)...",
     )
 
     if lm_template_input != st.session_state.lm_template:
@@ -229,9 +237,10 @@ with st.sidebar:
         value=10,
     )
 
-    can_process = bool(st.session_state.cv_text and st.session_state.lm_template.strip())
+    # ⚠️ SEUL LE CV EST DÉSORMAIS OBLIGATOIRE
+    can_process = bool(st.session_state.cv_text and st.session_state.cv_text.strip())
     if not can_process:
-        st.warning("Importez un CV et renseignez une LM type pour lancer le traitement.")
+        st.warning("Veuillez importer un CV pour lancer le traitement.")
 
     process_button = st.button(
         "🚀 Lancer le traitement",
@@ -269,6 +278,8 @@ if process_button:
                     progress = st.progress(0)
                     total = len(offers)
 
+                    has_lm_template = bool(st.session_state.lm_template and st.session_state.lm_template.strip())
+
                     for index, offer in enumerate(offers):
                         published_on = format_publication_date(offer.get("date_publication", ""))
                         st.write(
@@ -286,14 +297,17 @@ if process_button:
                         lm_generated = False
 
                         if auto_generate and score >= score_threshold:
-                            st.write("✍️ Génération de la lettre de motivation...")
-                            lm_path = generate_cover_letter(
-                                st.session_state.cv_text,
-                                offer,
-                                st.session_state.lm_template,
-                                entry_id,
-                            )
-                            lm_generated = True
+                            if has_lm_template:
+                                st.write("✍️ Génération de la lettre de motivation...")
+                                lm_path = generate_cover_letter(
+                                    st.session_state.cv_text,
+                                    offer,
+                                    st.session_state.lm_template,
+                                    entry_id,
+                                )
+                                lm_generated = True
+                            else:
+                                st.caption("ℹ️ Lettre non générée : aucun modèle de lettre de motivation fourni.")
 
                         append_entry(
                             offer,

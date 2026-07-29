@@ -4,7 +4,7 @@ from pypdf.errors import PdfReadError
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """Extract text content from a PDF file."""
+    """Extrait le texte d'un fichier PDF (CV ou Lettre type)."""
     try:
         reader = PdfReader(BytesIO(file_bytes))
         pages_text = []
