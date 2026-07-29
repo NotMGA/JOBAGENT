@@ -256,6 +256,12 @@ with st.sidebar:
 st.header("Historique des candidatures")
 
 if process_button:
+
+    # Charger les URLs ou identifiants déjà analysés
+history_df = load_history()
+existing_urls = set()
+if not history_df.empty and "url_offre" in history_df.columns:
+    existing_urls = set(history_df["url_offre"].dropna().astype(str))
     if not keywords.strip():
         st.error("Veuillez renseigner des mots-clés pour la recherche d'offres.")
     else:
@@ -281,6 +287,13 @@ if process_button:
                     has_lm_template = bool(st.session_state.lm_template and st.session_state.lm_template.strip())
 
                     for index, offer in enumerate(offers):
+                        offer_url = str(offer.get("url_offre", ""))
+
+# Si l'offre a déjà été traitée, on la saute
+if offer_url in existing_urls:
+    st.write(f"⏭️ Offre déjà analysée précédemment : **{offer['titre']}** ({offer['entreprise']})")
+    progress.progress((index + 1) / total)
+    continue
                         published_on = format_publication_date(offer.get("date_publication", ""))
                         st.write(
                             f"Analyse [{index + 1}/{total}] : **{offer['titre']}** "
