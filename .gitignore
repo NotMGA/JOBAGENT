@@ -1,0 +1,15 @@
+# Environnement virtuel Python
+venv/
+.venv/
+env/
+
+# Fichiers de données locales confidentielles (CV, LM, historique, etc.)
+data/
+*.sqlite
+*.db
+
+# Fichiers temporaires et de cache
+__pycache__/
+*.pyc
+.DS_Store
+.streamlit/secrets.toml
