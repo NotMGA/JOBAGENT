@@ -294,10 +294,15 @@ if process_button:
         st.error("Veuillez entrer au moins un mot-clé de recherche.")
     else:
         try:
+            # 1. Charger et nettoyer la liste des URLs déjà enregistrées dans l'historique
             history_df = load_history()
             existing_urls = set()
             if not history_df.empty and "url_offre" in history_df.columns:
-                existing_urls = set(history_df["url_offre"].dropna().astype(str))
+                existing_urls = {
+                    str(url).strip() 
+                    for url in history_df["url_offre"].dropna() 
+                    if str(url).strip()
+                }
 
             with st.status("Recherche et analyse en cours...", expanded=True) as status:
                 st.write("🔍 Collecte des offres auprès des sources configurées...")
@@ -321,10 +326,14 @@ if process_button:
                         st.session_state.lm_template and st.session_state.lm_template.strip()
                     )
 
-                    for index, offer in enumerate(offers):
-                        offer_url = str(offer.get("url_offre", ""))
+                    new_offers_count = 0
 
-                        if offer_url in existing_urls:
+                    for index, offer in enumerate(offers):
+                        # Nettoyage de l'URL de l'offre actuelle
+                        offer_url = str(offer.get("url_offre", "")).strip()
+
+                        # 2. Vérification stricte : si l'URL existe déjà, on ignore
+                        if offer_url and offer_url in existing_urls:
                             st.write(
                                 f"⏭️ *Offre déjà analysée* : **{offer['titre']}** chez {offer['entreprise']}"
                             )
@@ -358,6 +367,7 @@ if process_button:
                             else:
                                 st.caption("&nbsp;&nbsp;&nbsp;&nbsp;ℹ️ Pas de modèle de lettre configuré : génération ignorée.")
 
+                        # Enregistrement dans l'historique
                         append_entry(
                             offer,
                             score,
@@ -366,16 +376,20 @@ if process_button:
                             entry_id=entry_id,
                         )
 
+                        # 3. Mettre à jour le set local immédiatement pour éviter les doublons dans la même session
+                        if offer_url:
+                            existing_urls.add(offer_url)
+
+                        new_offers_count += 1
                         progress.progress((index + 1) / total)
 
                     status.update(
-                        label=f"Traitement terminé avec succès ({total} offres évaluées)",
+                        label=f"Traitement terminé avec succès ({new_offers_count} nouvelle(s) offre(s) ajoutée(s))",
                         state="complete",
                     )
                     st.toast("Recherche terminée et historique mis à jour !", icon="🎉")
 
         except Exception as exc:
             st.error(f"Une erreur est survenue pendant le traitement : {exc}")
-
 # Affichage du dashboard/historique
 render_history_section()
