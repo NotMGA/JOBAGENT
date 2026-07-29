@@ -237,7 +237,7 @@ with st.sidebar:
         value=10,
     )
 
-    # ⚠️ SEUL LE CV EST DÉSORMAIS OBLIGATOIRE
+    # SEUL LE CV EST OBLIGATOIRE
     can_process = bool(st.session_state.cv_text and st.session_state.cv_text.strip())
     if not can_process:
         st.warning("Veuillez importer un CV pour lancer le traitement.")
@@ -256,16 +256,16 @@ with st.sidebar:
 st.header("Historique des candidatures")
 
 if process_button:
-
-    # Charger les URLs ou identifiants déjà analysés
-history_df = load_history()
-existing_urls = set()
-if not history_df.empty and "url_offre" in history_df.columns:
-    existing_urls = set(history_df["url_offre"].dropna().astype(str))
     if not keywords.strip():
         st.error("Veuillez renseigner des mots-clés pour la recherche d'offres.")
     else:
         try:
+            # Charger les URLs d'offres déjà analysées dans l'historique
+            history_df = load_history()
+            existing_urls = set()
+            if not history_df.empty and "url_offre" in history_df.columns:
+                existing_urls = set(history_df["url_offre"].dropna().astype(str))
+
             with st.status("Traitement en cours...", expanded=True) as status:
                 st.write("Recherche des offres en cours...")
                 
@@ -284,16 +284,22 @@ if not history_df.empty and "url_offre" in history_df.columns:
                     progress = st.progress(0)
                     total = len(offers)
 
-                    has_lm_template = bool(st.session_state.lm_template and st.session_state.lm_template.strip())
+                    has_lm_template = bool(
+                        st.session_state.lm_template and st.session_state.lm_template.strip()
+                    )
 
                     for index, offer in enumerate(offers):
                         offer_url = str(offer.get("url_offre", ""))
 
-# Si l'offre a déjà été traitée, on la saute
-if offer_url in existing_urls:
-    st.write(f"⏭️ Offre déjà analysée précédemment : **{offer['titre']}** ({offer['entreprise']})")
-    progress.progress((index + 1) / total)
-    continue
+                        # Si l'offre a déjà été traitée, on passe à la suivante
+                        if offer_url in existing_urls:
+                            st.write(
+                                f"⏭️ Offre déjà analysée précédemment : **{offer['titre']}** "
+                                f"({offer['entreprise']})"
+                            )
+                            progress.progress((index + 1) / total)
+                            continue
+
                         published_on = format_publication_date(offer.get("date_publication", ""))
                         st.write(
                             f"Analyse [{index + 1}/{total}] : **{offer['titre']}** "
@@ -320,7 +326,9 @@ if offer_url in existing_urls:
                                 )
                                 lm_generated = True
                             else:
-                                st.caption("ℹ️ Lettre non générée : aucun modèle de lettre de motivation fourni.")
+                                st.caption(
+                                    "ℹ️ Lettre non générée : aucun modèle de lettre de motivation fourni."
+                                )
 
                         append_entry(
                             offer,
