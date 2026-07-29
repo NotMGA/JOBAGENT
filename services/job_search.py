@@ -1,6 +1,5 @@
 import os
 from typing import Any
-
 import requests
 from dotenv import load_dotenv
 
@@ -9,32 +8,25 @@ from config import FRANCE_TRAVAIL_SEARCH_URL, FRANCE_TRAVAIL_TOKEN_URL
 load_dotenv()
 
 _token_cache: dict[str, Any] = {}
-
 SORT_RECENT_FIRST = "1"
 
 
 def get_code_insee(nom_ville: str) -> str:
-    """
-    Récupère le code INSEE d'une commune à partir de son nom.
-    Si le nom est déjà un code INSEE à 5 chiffres, le retourne directement.
-    """
+    """Récupère le code INSEE d'une commune à partir de son nom."""
     ville_clean = nom_ville.strip()
     
-    # Si c'est déjà un code postal ou INSEE de 5 chiffres, on le garde tel quel
     if ville_clean.isdigit() and len(ville_clean) == 5:
         return ville_clean
         
     try:
-        # Appel à l'API Géo du gouvernement français (priorité à la population en cas d'homonymes)
         url = f"https://geo.api.gouv.fr/communes?nom={ville_clean}&boost=population&limit=1"
         response = requests.get(url, timeout=5)
         
         if response.status_code == 200:
             data = response.json()
             if data:
-                return data[0]['code']  # Récupère le code INSEE à 5 chiffres
+                return data[0]['code']
     except Exception as e:
-        # En cas d'erreur de réseau ou d'API, on logue et on laisse la valeur d'origine
         print(f"Erreur lors de la recherche du code INSEE pour '{nom_ville}': {e}")
         
     return ville_clean
@@ -44,10 +36,18 @@ def _get_access_token() -> str:
     client_id = os.getenv("FRANCE_TRAVAIL_CLIENT_ID")
     client_secret = os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET")
 
+    # Fallback vers Streamlit Secrets si non trouvé dans les env vars
+    if not client_id or not client_secret:
+        try:
+            import streamlit as st
+            client_id = client_id or st.secrets.get("FRANCE_TRAVAIL_CLIENT_ID")
+            client_secret = client_secret or st.secrets.get("FRANCE_TRAVAIL_CLIENT_SECRET")
+        except Exception:
+            pass
+
     if not client_id or not client_secret:
         raise ValueError(
-            "Identifiants France Travail manquants. "
-            "Renseignez FRANCE_TRAVAIL_CLIENT_ID et FRANCE_TRAVAIL_CLIENT_SECRET dans .env"
+            "Identifiants France Travail manquants dans .env ou Streamlit Secrets."
         )
 
     if _token_cache.get("token"):
@@ -81,12 +81,10 @@ def _build_description(offer: dict) -> str:
 
 
 def _get_publication_date(offer: dict) -> str:
-    """Return the most recent publication date available for an offer."""
     return offer.get("dateActualisation") or offer.get("dateCreation") or ""
 
 
 def _sort_by_publication_date(offers: list[dict]) -> list[dict]:
-    """Sort offers from most recent to oldest."""
     return sorted(
         offers,
         key=lambda offer: offer.get("date_publication") or "",
@@ -136,7 +134,6 @@ def search_jobs(
         "sort": SORT_RECENT_FIRST,
     }
     
-    # Conversion automatique du nom de la ville en code INSEE et ajout du rayon
     if location.strip():
         code_insee = get_code_insee(location)
         params["commune"] = code_insee
@@ -149,6 +146,12 @@ def search_jobs(
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
+
+    # ⚠️ Gestion du code HTTP 204 (No Content)
+    if response.status_code == 204:
+        print("[France Travail] 0 résultat (Code 204).")
+        return []
+
     response.raise_for_status()
 
     data = response.json()

@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from typing import Any, Dict, Tuple
@@ -25,48 +26,47 @@ def get_groq_client() -> Groq:
 
 
 def score_coherence(cv_text: str, offer: Dict[str, Any]) -> Tuple[float, str]:
-    """Analyse la adéquation entre le CV et l'offre via Groq."""
-    client = get_groq_client()
+    """Analyse l'adéquation entre le CV et l'offre via Groq (Llama 3.3)."""
+    try:
+        client = get_groq_client()
+    except Exception as e:
+        return 0.0, f"Erreur de configuration client Groq : {e}"
 
-    prompt = f"""Tu es un recruteur expert. Évalue la correspondance entre le CV et l'offre d'emploi ci-dessous.
-
-    ### CV DU CANDIDAT :
-    {cv_text}
-
-    ### OFFRE D'EMPLOI :
-    Titre : {offer.get('titre', '')}
-    Entreprise : {offer.get('entreprise', '')}
-    Description : {offer.get('description', '')}
-
-    ### CONSIGNES STRICTES :
-    1. Attribue une note de 0.0 à 10.0 sur la cohérence globale du profil avec l'offre.
-    2. Donne une justification très courte (2 à 3 phrases maximum).
-    3. Respecte IMPÉRATIVEMENT le format de réponse suivant sur deux lignes :
-    SCORE: <note>/10
-    JUSTIFICATION: <explication>
-    """
-
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+    system_instruction = (
+        "Tu es un recruteur expert RH. Évalue la correspondance entre le CV et l'offre d'emploi. "
+        "Tu dois IMPÉRATIVEMENT répondre uniquement avec un objet JSON valide contenant "
+        "exactement deux clés : 'score' (un nombre float entre 0.0 et 10.0) et 'justification' (2 à 3 phrases max en français)."
     )
 
-    content = response.choices[0].message.content.strip()
+    user_content = f"""### CV DU CANDIDAT :
+{cv_text[:4000]}
 
-    # Extraction du score et de la justification
-    score = 0.0
-    justification = content
+### OFFRE D'EMPLOI :
+Titre : {offer.get('titre', '')}
+Entreprise : {offer.get('entreprise', '')}
+Description : {offer.get('description', '')[:3000]}
+"""
 
-    score_match = re.search(r"SCORE:\s*([\d\.]+)", content, re.IGNORECASE)
-    if score_match:
-        try:
-            score = float(score_match.group(1))
-        except ValueError:
-            score = 0.0
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
 
-    justif_match = re.search(r"JUSTIFICATION:\s*(.*)", content, re.IGNORECASE | re.DOTALL)
-    if justif_match:
-        justification = justif_match.group(1).strip()
+        content = response.choices[0].message.content.strip()
+        data = json.loads(content)
 
-    return score, justification
+        score = float(data.get("score", 0.0))
+        score = min(max(score, 0.0), 10.0)
+        justification = str(data.get("justification", "Aucune justification fournie.")).strip()
+
+        return round(score, 1), justification
+
+    except Exception as err:
+        print(f"[Groq Scorer] Erreur lors du calcul du score : {err}")
+        return 0.0, f"Erreur lors de l'évaluation : {err}"

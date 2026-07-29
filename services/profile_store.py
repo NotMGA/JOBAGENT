@@ -14,7 +14,11 @@ def load_document(file_path: Path) -> str:
     """Lit un document s'il existe, sinon renvoie une chaîne vide."""
     ensure_data_dir()
     if file_path.exists():
-        return file_path.read_text(encoding="utf-8").strip()
+        try:
+            return file_path.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            print(f"[ProfileStore] Erreur lors de la lecture de {file_path}: {e}")
+            return ""
     return ""
 
 
@@ -25,10 +29,7 @@ def save_document(file_path: Path, content: str) -> None:
 
 
 def get_user_profile() -> tuple[str, str]:
-    """
-    Charge le CV et la lettre type depuis les fichiers locaux.
-    Retourne (cv_text, lettre_type_text).
-    """
+    """Charge le CV et la lettre type depuis les fichiers locaux."""
     cv = load_document(CV_PATH)
     lettre = load_document(LETTRE_TYPE_PATH)
     return cv, lettre

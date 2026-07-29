@@ -5,6 +5,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _get_adzuna_credentials() -> tuple[str, str]:
+    """Récupère les identifiants depuis l'environnement ou Streamlit secrets."""
+    app_id = os.getenv("ADZUNA_APP_ID")
+    app_key = os.getenv("ADZUNA_APP_KEY")
+
+    if not app_id or not app_key:
+        try:
+            import streamlit as st
+            app_id = app_id or st.secrets.get("ADZUNA_APP_ID")
+            app_key = app_key or st.secrets.get("ADZUNA_APP_KEY")
+        except Exception:
+            pass
+
+    return (app_id or "").strip('"\' '), (app_key or "").strip('"\' ')
+
+
 def search_jobs(
     keywords: str,
     location: str = "",
@@ -12,27 +28,25 @@ def search_jobs(
     distance: int = 10,
 ) -> list[dict]:
     """Interroge l'API Adzuna France pour récupérer les offres d'emploi."""
-    app_id = os.getenv("ADZUNA_APP_ID")
-    app_key = os.getenv("ADZUNA_APP_KEY")
+    app_id, app_key = _get_adzuna_credentials()
 
     if not app_id or not app_key:
-        print("[Adzuna] Identifiants ADZUNA_APP_ID ou ADZUNA_APP_KEY manquants dans le .env")
+        print("[Adzuna] Identifiants ADZUNA_APP_ID ou ADZUNA_APP_KEY manquants.")
         return []
 
     url = "https://api.adzuna.com/v1/api/jobs/fr/search/1"
     params = {
-        "app_id": app_id.strip('"').strip("'"),
-        "app_key": app_key.strip('"').strip("'"),
+        "app_id": app_id,
+        "app_key": app_key,
         "results_per_page": max_results,
         "what": keywords,
         "content-type": "application/json",
     }
 
-    # Transmet le nom de la ville ou code postal, et le rayon de recherche
     if location.strip():
         params["where"] = location.strip()
         if distance > 0:
-            params["distance"] = distance  # Adzuna gère la distance en kilomètres
+            params["distance"] = distance
 
     try:
         response = requests.get(url, params=params, timeout=15)

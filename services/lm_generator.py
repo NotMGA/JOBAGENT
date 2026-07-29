@@ -34,36 +34,39 @@ def generate_cover_letter(
     """Génère une lettre de motivation personnalisée via Groq et la sauvegarde sur disque."""
     client = get_groq_client()
 
-    prompt = f"""Tu es un assistant rédactionnel professionnel.
-    Rédige une lettre de motivation personnalisée en français en t'inspirant de la lettre type fournie, en adaptant le contenu aux compétences du CV et aux exigences de l'offre d'emploi.
+    system_instruction = (
+        "Tu es un assistant rédactionnel expert en recrutement. "
+        "Ton objectif est de rédiger une lettre de motivation personnalisée, percutante et professionnelle en français. "
+        "Inspire-toi de la lettre type fournie tout en l'adaptant précisément au profil du candidat et à l'offre. "
+        "Consignes strictes : Rédige UNIQUEMENT le corps de la lettre. Pas de titre, pas d'amorce ni de commentaires d'introduction."
+    )
 
-    ### CV DU CANDIDAT :
-    {cv_text}
+    user_content = f"""### CV DU CANDIDAT :
+{cv_text[:4000]}
 
-    ### OFFRE D'EMPLOI :
-    Titre : {offer.get('titre', '')}
-    Entreprise : {offer.get('entreprise', '')}
-    Description : {offer.get('description', '')}
+### OFFRE D'EMPLOI :
+Titre : {offer.get('titre', '')}
+Entreprise : {offer.get('entreprise', '')}
+Description : {offer.get('description', '')[:3000]}
 
-    ### LETTRE TYPE DE RÉFÉRENCE :
-    {lm_template}
-
-    ### INSTRUCTIONS :
-    - Rédige uniquement le corps de la lettre de motivation.
-    - Sois percutant, professionnel et sans formules génériques superflues.
-    """
+### LETTRE TYPE DE RÉFÉRENCE :
+{lm_template[:3000]}
+"""
 
     response = client.chat.completions.create(
         model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.5,
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.4,
     )
 
     letter_text = response.choices[0].message.content.strip()
 
-    # Sauvegarde locale de la lettre générée
+    # Sauvegarde locale de la lettre
     LETTERS_DIR.mkdir(parents=True, exist_ok=True)
     file_path = LETTERS_DIR / f"LM_{entry_id}.txt"
     file_path.write_text(letter_text, encoding="utf-8")
 
-    return str(file_path)
+    return str(file_path.as_posix())

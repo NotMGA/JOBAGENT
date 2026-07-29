@@ -1,5 +1,11 @@
+import re
 from services.job_search import search_jobs as search_france_travail
 from services.adzuna_search import search_jobs as search_adzuna
+
+
+def _clean_string(text: str) -> str:
+    """Conserve uniquement les caractères alphanumériques pour comparer les titres."""
+    return re.sub(r"[^\w\s]", "", text.lower()).strip()
 
 
 def search_all_sources(
@@ -21,14 +27,17 @@ def search_all_sources(
             distance=distance,
         )
         for offer in ft_offers:
-            sig = f"{offer['titre'].lower().strip()}-{offer['entreprise'].lower().strip()}"
+            titre_clean = _clean_string(offer.get("titre", ""))
+            entreprise_clean = _clean_string(offer.get("entreprise", ""))
+            sig = f"{titre_clean}-{entreprise_clean}"
+            
             seen_signatures.add(sig)
             all_offers.append(offer)
         print(f"[Orchestrateur] {len(ft_offers)} offres France Travail.")
     except Exception as e:
         print(f"[Orchestrateur] Erreur France Travail : {e}")
 
-    # 2. Adzuna (Indeed, HelloWork, etc.)
+    # 2. Adzuna (HelloWork, Indeed, etc.)
     try:
         adz_offers = search_adzuna(
             keywords=keywords,
@@ -38,7 +47,10 @@ def search_all_sources(
         )
         added_adzuna = 0
         for offer in adz_offers:
-            sig = f"{offer['titre'].lower().strip()}-{offer['entreprise'].lower().strip()}"
+            titre_clean = _clean_string(offer.get("titre", ""))
+            entreprise_clean = _clean_string(offer.get("entreprise", ""))
+            sig = f"{titre_clean}-{entreprise_clean}"
+
             if sig not in seen_signatures:
                 seen_signatures.add(sig)
                 all_offers.append(offer)
