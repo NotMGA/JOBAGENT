@@ -1,0 +1,31 @@
+/* --- AMÉLIORATION DU VISUEL STREAMLIT --- */
+
+/* Arrondir et moderniser les blocs métriques */
+div[data-testid="stMetric"] {
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 12px 18px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Espacement et conteneurs modernes pour les cartes de LM */
+div[data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
+    border-radius: 12px;
+}
+
+/* Customisation des boutons principaux */
+button[kind="primary"] {
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+}
+
+/* Personnalisation de la barre latérale */
+section[data-testid="stSidebar"] {
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Masquer le branding par défaut au bas de la sidebar */
+footer {
+    visibility: hidden;
+}
