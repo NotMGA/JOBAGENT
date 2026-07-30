@@ -6,11 +6,11 @@ import streamlit as st
 # Config globale
 from config import DEFAULT_SCORE_THRESHOLD
 
-# --- IMPORTS DES 3 NOUVEAUX FICHIERS ---
+# --- IMPORTS DES MODÈLES ET REPOSITORIES ---
 from models import ApplicationEntry, JobOffer
-from repositories.file_repository import FileStorageRepository  # Hérite de base.py pour le stockage local / fichiers
+from repositories.file_repository import FileStorageRepository
 
-# --- IMPORTS DES SERVICES ADAPTÉS ---
+# --- IMPORTS DES SERVICES ---
 from services.job_search_orchestrator import search_all_sources
 from services.lm_generator import generate_cover_letter
 from services.pdf_parser import extract_text_from_pdf
@@ -50,18 +50,15 @@ if "cv_text" not in st.session_state or "lm_template" not in st.session_state:
 # FONCTIONS D'AFFICHAGE (INTERFACE & METRICS)
 # ==========================================
 def render_history_dashboard():
-    # Récupération sous forme de liste d'objets ApplicationEntry
     entries = repo.load_history(user_id=user_id)
 
     if not entries:
         st.info("💡 Aucune recherche enregistrée. Définissez vos critères à gauche pour démarrer.")
         return
 
-    # Conversion en DataFrame pour l'affichage
     data = [entry.to_dict() if hasattr(entry, "to_dict") else entry.__dict__ for entry in entries]
     history_df = pd.DataFrame(data)
 
-    # Indicateurs clés
     total_offers = len(history_df)
     avg_score = round(history_df["score_coherence"].mean(), 1) if "score_coherence" in history_df and not history_df.empty else 0.0
     total_lm = len(history_df[history_df["lm_generee"] == True]) if "lm_generee" in history_df else 0
@@ -73,7 +70,6 @@ def render_history_dashboard():
 
     st.divider()
 
-    # En-tête + bouton effacer
     col_title, col_clear = st.columns([3, 1])
     with col_title:
         st.subheader("📋 Historique des candidatures")
@@ -83,7 +79,6 @@ def render_history_dashboard():
             st.toast("Historique réinitialisé !", icon="🧹")
             st.rerun()
 
-    # Mise en forme pour le tableau
     display_df = history_df.copy()
     if "date_traitement" in display_df.columns:
         display_df["date_traitement"] = pd.to_datetime(display_df["date_traitement"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
@@ -103,7 +98,6 @@ def render_history_dashboard():
 
     has_letters = False
     for entry in entries:
-        # Manipulation via l'objet ApplicationEntry
         if getattr(entry, "lm_generee", False) and getattr(entry, "chemin_lm", None):
             letter_content = repo.read_letter(entry.chemin_lm)
             if letter_content:
@@ -152,7 +146,7 @@ with st.sidebar:
 
     # 1. Gestion du CV
     st.subheader("1. Votre CV")
-    cv_file = st.file_uploader("Importer votre CV (PDF)", type=["pdf"])
+    cv_file = st.file_uploader("Importer votre CV (PDF)", type=["pdf"], key="cv_uploader")
     if cv_file is not None:
         try:
             extracted_cv = extract_text_from_pdf(cv_file.read())
@@ -169,8 +163,22 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. Modèle de Lettre (Optionnel)
+    # 2. Modèle de Lettre (Optionnel) — REAJOUT DU BOUTON D'IMPORTATION
     st.subheader("2. Modèle de Lettre (Optionnel)")
+    lm_file = st.file_uploader("Importer un modèle (TXT ou PDF)", type=["txt", "pdf"], key="lm_uploader")
+    if lm_file is not None:
+        try:
+            if lm_file.name.endswith(".pdf"):
+                imported_lm = extract_text_from_pdf(lm_file.read())
+            else:
+                imported_lm = lm_file.read().decode("utf-8")
+
+            st.session_state.lm_template = imported_lm
+            repo.save_lm_template(imported_lm, user_id=user_id)
+            st.toast("Modèle de lettre mis à jour !", icon="📄")
+        except Exception as exc:
+            st.error(f"Erreur d'importation LM : {exc}")
+
     lm_input = st.text_area(
         "Modèle texte personnalisé",
         value=st.session_state.lm_template,
@@ -179,7 +187,7 @@ with st.sidebar:
     )
     if lm_input != st.session_state.lm_template:
         st.session_state.lm_template = lm_input
-        repo.save_lm_template(text, user_id=user_id)
+        repo.save_lm_template(lm_input, user_id=user_id) # FixNameError: 'text' -> 'lm_input'
 
     st.divider()
 
@@ -224,7 +232,6 @@ if btn_search:
         st.error("Veuillez renseigner au moins un mot-clé.")
     else:
         try:
-            # Récupération des URLs déjà traitées pour éviter les doublons
             existing_entries = repo.load_history(user_id=user_id)
             existing_urls = {
                 entry.url_offre.strip()
@@ -246,7 +253,6 @@ if btn_search:
                     st.warning("Aucune offre trouvée pour ces critères.")
                     status.update(label="Recherche terminée (0 résultat)", state="complete")
                 else:
-                    # Conversion des dictionnaires reçus par l'orchestrateur en objets JobOffer
                     job_offers = [
                         JobOffer.from_dict(off) if hasattr(JobOffer, "from_dict") else JobOffer(**off)
                         for off in raw_offers
@@ -259,7 +265,6 @@ if btn_search:
                     for idx, offer in enumerate(job_offers):
                         offer_url = str(getattr(offer, "url_offre", "")).strip()
 
-                        # Anti-doublon
                         if offer_url and offer_url in existing_urls:
                             st.write(f"⏭️ *Déjà analysée* : **{offer.titre}** chez {offer.entreprise}")
                             progress.progress((idx + 1) / total)
@@ -267,7 +272,6 @@ if btn_search:
 
                         st.write(f"⚡ [{idx + 1}/{total}] **{offer.titre}** — *{offer.entreprise}*")
 
-                        # Évaluation via scorer (prend l'objet JobOffer ou dict selon ton adaptation)
                         score, justification = score_coherence(
                             st.session_state.cv_text, offer
                         )
@@ -277,7 +281,6 @@ if btn_search:
                         lm_path = ""
                         lm_generated = False
 
-                        # Génération de la LM si le score dépasse le seuil
                         if auto_generate and score >= score_threshold:
                             if st.session_state.lm_template.strip():
                                 st.write("&nbsp;&nbsp;&nbsp;&nbsp;✍️ Rédaction de la lettre de motivation...")
@@ -290,7 +293,6 @@ if btn_search:
                                 )
                                 lm_generated = True
 
-                        # Instanciation de l'objet ApplicationEntry
                         entry = ApplicationEntry(
                             id=entry_id,
                             titre=offer.titre,
@@ -303,7 +305,6 @@ if btn_search:
                             chemin_lm=lm_path,
                         )
 
-                        # Enregistrement via le repository
                         repo.append_entry(entry, user_id=user_id)
 
                         if offer_url:
@@ -318,5 +319,5 @@ if btn_search:
         except Exception as exc:
             st.error(f"Une erreur est survenue pendant le traitement : {exc}")
 
-# Affichage du dashboard et de l'historique
+# Affichage du dashboard
 render_history_dashboard()
