@@ -157,7 +157,7 @@ with st.sidebar:
         try:
             extracted_cv = extract_text_from_pdf(cv_file.read())
             st.session_state.cv_text = extracted_cv
-            repo.save_cv(text, user_id=user_id)
+            repo.save_cv(extracted_cv, user_id=user_id)
             st.toast("CV mis à jour avec succès !", icon="✅")
         except Exception as exc:
             st.error(f"Erreur d'extraction : {exc}")
