@@ -1,19 +1,46 @@
 # models.py
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class JobOffer(BaseModel):
     """Représente une offre d'emploi normalisée quelle que soit la source."""
-    id: Optional[str] = None
-    title: str
-    company: str
-    location: str
-    url: str = ""
-    description: str = ""
-    publication_date: Optional[str] = None
+
+    id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("id", "id_offre"),
+    )
+    title: str = Field(
+        default="Titre inconnu",
+        validation_alias=AliasChoices("title", "titre", "intitule", "label"),
+    )
+    company: str = Field(
+        default="Entreprise inconnue",
+        validation_alias=AliasChoices("company", "entreprise", "nom_entreprise"),
+    )
+    location: str = Field(
+        default="Non précisé",
+        validation_alias=AliasChoices("location", "lieu", "ville"),
+    )
+    url: str = Field(
+        default="",
+        validation_alias=AliasChoices("url", "url_offre", "link"),
+    )
+    description: str = Field(
+        default="",
+        validation_alias=AliasChoices("description", "description_offre", "details"),
+    )
+    publication_date: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("publication_date", "date_publication", "date"),
+    )
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "JobOffer":
+        """Instancie une JobOffer à partir d'un dictionnaire brut (français ou anglais)."""
+        return cls.model_validate(data)
 
     @property
     def signature(self) -> str:
@@ -25,6 +52,7 @@ class JobOffer(BaseModel):
 
 class ApplicationEntry(BaseModel):
     """Représente une candidature enregistrée dans l'historique."""
+
     id: str
     processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     job: JobOffer
@@ -51,5 +79,6 @@ class ApplicationEntry(BaseModel):
 
 class UserProfile(BaseModel):
     """Profil utilisateur contenant le CV et la lettre type."""
+
     cv_text: str = ""
     lm_template_text: str = ""
