@@ -37,7 +37,7 @@ if "user_id" not in st.session_state:
 user_id = st.session_state.user_id
 
 # Instanciation du repository
-repo = FileStorageRepository(user_id=user_id)
+repo = FileStorageRepository()
 
 # Synchronisation du state Streamlit avec le repository
 if "cv_text" not in st.session_state or "lm_template" not in st.session_state:
