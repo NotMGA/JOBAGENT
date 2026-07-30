@@ -1,16 +1,14 @@
 import os
-from pathlib import Path
 from typing import Any, Dict
 from groq import Groq
 
-# On importe la fonction de résolution de chemins au lieu de la constante fixe
-from services.history_store import get_user_data_paths
+from models import JobOffer
+from repositories.file_repository import FileStorageRepository
 
 MODEL_NAME = "llama-3.3-70b-versatile"
 
 
 def get_groq_client() -> Groq:
-    """Récupère le client Groq depuis l'environnement ou les secrets Streamlit."""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         try:
@@ -26,13 +24,14 @@ def get_groq_client() -> Groq:
 
 def generate_cover_letter(
     cv_text: str,
-    offer: Dict[str, Any],
+    job: JobOffer,  # 👈 Utilisation du modèle Pydantic
     lm_template: str,
     entry_id: str,
-    user_id: str = "default",  # 👈 Ajout du paramètre user_id
+    user_id: str = "default",
+    repository: FileStorageRepository = None,
 ) -> str:
-    """Génère une lettre de motivation personnalisée via Groq et la sauvegarde dans le dossier user."""
     client = get_groq_client()
+    repo = repository or FileStorageRepository()
 
     system_instruction = (
         "Tu es un assistant rédactionnel expert en recrutement. "
@@ -45,9 +44,9 @@ def generate_cover_letter(
 {cv_text[:4000]}
 
 ### OFFRE D'EMPLOI :
-Titre : {offer.get('titre', '')}
-Entreprise : {offer.get('entreprise', '')}
-Description : {offer.get('description', '')[:3000]}
+Titre : {job.title}
+Entreprise : {job.company}
+Description : {job.description[:3000]}
 
 ### LETTRE TYPE DE RÉFÉRENCE :
 {lm_template[:3000]}
@@ -64,8 +63,8 @@ Description : {offer.get('description', '')[:3000]}
 
     letter_text = response.choices[0].message.content.strip()
 
-    # 📁 Sauvegarde dans le dossier spécifique de l'utilisateur : data/<user_id>/letters/
-    _, letters_dir = get_user_data_paths(user_id)
+    # Sauvegarde via le repository
+    _, letters_dir = repo._get_user_paths(user_id)
     file_path = letters_dir / f"LM_{entry_id}.txt"
     file_path.write_text(letter_text, encoding="utf-8")
 

@@ -1,268 +1,191 @@
 import os
-import re
 import uuid
 import pandas as pd
 import streamlit as st
 
+# Config globale
 from config import DEFAULT_SCORE_THRESHOLD
-from services.history_store import (
-    append_entry,
-    clear_history,
-    load_history,
-    read_letter_file,
-)
+
+# --- IMPORTS DES 3 NOUVEAUX FICHIERS ---
+from models import ApplicationEntry, JobOffer
+from file_repository import FileStorageRepository  # Hérite de base.py pour le stockage local / fichiers
+
+# --- IMPORTS DES SERVICES ADAPTÉS ---
 from services.job_search_orchestrator import search_all_sources
 from services.lm_generator import generate_cover_letter
 from services.pdf_parser import extract_text_from_pdf
-from services.profile_store import (
-    get_user_profile,
-    save_cv,
-    save_lm_template,
-)
 from services.scorer import score_coherence
+
 
 # --- CONFIGURATION PAGE & INITIALISATION ---
 st.set_page_config(
-    page_title="JOBAGENT — Assistant de Candidature",
+    page_title="JOBAGENT — Assistant Candidature",
     page_icon="💼",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Chargement dynamique du fichier CSS externe s'il existe
-CSS_FILE = "style.css"
-if os.path.exists(CSS_FILE):
-    with open(CSS_FILE, "r", encoding="utf-8") as f:
+# Chargement du style CSS s'il existe
+if os.path.exists("style.css"):
+    with open("style.css", "r", encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# 🔑 1. Initialisation de l'ID unique temporaire par session
+# Session unique par utilisateur
 if "user_id" not in st.session_state:
     st.session_state.user_id = str(uuid.uuid4())
 
 user_id = st.session_state.user_id
 
-# Initialisation du Session State pour le profil utilisateur
+# Instanciation du repository
+repo = FileStorageRepository(user_id=user_id)
+
+# Synchronisation du state Streamlit avec le repository
 if "cv_text" not in st.session_state or "lm_template" not in st.session_state:
-    saved_cv, saved_lm = get_user_profile(user_id)
-    st.session_state.cv_text = saved_cv
-    st.session_state.lm_template = saved_lm
+    st.session_state.cv_text = repo.get_user_cv() or ""
+    st.session_state.lm_template = repo.get_user_lm_template() or ""
 
 
-# --- FONCTIONS UTILITAIRES ---
-def format_publication_date(date_value: str) -> str:
-    if not date_value:
-        return "Date inconnue"
-    parsed = pd.to_datetime(date_value, errors="coerce")
-    if pd.isna(parsed):
-        return str(date_value)
-    return parsed.strftime("%d/%m/%Y")
+# ==========================================
+# FONCTIONS D'AFFICHAGE (INTERFACE & METRICS)
+# ==========================================
+def render_history_dashboard():
+    # Récupération sous forme de liste d'objets ApplicationEntry
+    entries = repo.load_history()
 
-
-def sanitize_filename(name: str) -> str:
-    clean = re.sub(r"[^\w\s-]", "", name, flags=re.UNICODE)
-    return re.sub(r"[-\s]+", "_", clean).strip("_")
-
-
-def render_dashboard_metrics(history_df: pd.DataFrame) -> None:
-    """Affiche des indicateurs clés modernes en haut du dashboard."""
-    col1, col2, col3 = st.columns(3)
-    
-    total_offers = len(history_df)
-    avg_score = round(history_df["score_coherence"].mean(), 1) if not history_df.empty else 0.0
-    total_letters = len(history_df[history_df["lm_generee"].str.lower() == "oui"]) if not history_df.empty else 0
-
-    with col1:
-        st.metric(label="📊 Offres analysées", value=total_offers)
-    with col2:
-        st.metric(label="🎯 Score moyen", value=f"{avg_score} / 10" if total_offers > 0 else "N/A")
-    with col3:
-        st.metric(label="📝 Lettres générées", value=total_letters)
-
-
-def render_history_section(user_id: str) -> None:
-    history = load_history(user_id)
-
-    if history.empty:
-        st.info("💡 Aucune candidature analysée pour le moment. Renseignez vos critères dans le menu à gauche et lancez le traitement !")
+    if not entries:
+        st.info("💡 Aucune recherche enregistrée. Définissez vos critères à gauche pour démarrer.")
         return
 
-    # Indicateurs visuels du tableau de bord
-    render_dashboard_metrics(history)
+    # Conversion en DataFrame pour l'affichage
+    data = [entry.to_dict() if hasattr(entry, "to_dict") else entry.__dict__ for entry in entries]
+    history_df = pd.DataFrame(data)
+
+    # Indicateurs clés
+    total_offers = len(history_df)
+    avg_score = round(history_df["score_coherence"].mean(), 1) if "score_coherence" in history_df and not history_df.empty else 0.0
+    total_lm = len(history_df[history_df["lm_generee"] == True]) if "lm_generee" in history_df else 0
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📊 Offres analysées", total_offers)
+    col2.metric("🎯 Score moyen", f"{avg_score} / 10" if total_offers > 0 else "N/A")
+    col3.metric("📝 Lettres créées", total_lm)
+
     st.divider()
 
-    # --- En-tête de la section Tableau + Bouton effacer ---
+    # En-tête + bouton effacer
     col_title, col_clear = st.columns([3, 1])
     with col_title:
-        st.subheader("📋 Historique des recherches")
+        st.subheader("📋 Historique des candidatures")
     with col_clear:
-        if st.button("🗑️ Effacer l'historique", type="secondary", width="stretch"):
-            clear_history(user_id)
-            st.toast("L'historique a été réinitialisé.", icon="🧹")
+        if st.button("🗑️ Effacer l'historique", use_container_width=True):
+            repo.clear_history()
+            st.toast("Historique réinitialisé !", icon="🧹")
             st.rerun()
 
-    display_df = history.copy()
-    display_df["date_traitement"] = pd.to_datetime(
-        display_df["date_traitement"], errors="coerce"
-    ).dt.strftime("%d/%m/%Y %H:%M")
-    display_df["date_publication"] = display_df["date_publication"].apply(format_publication_date)
-
-    table_df = display_df[
-        [
-            "date_publication",
-            "date_traitement",
-            "titre",
-            "entreprise",
-            "score_coherence",
-            "lm_generee",
-            "url_offre",
-        ]
-    ].rename(
-        columns={
-            "date_publication": "Publiée le",
-            "date_traitement": "Traitée le",
-            "titre": "Titre du poste",
-            "entreprise": "Entreprise",
-            "score_coherence": "Score /10",
-            "lm_generee": "LM Générée",
-            "url_offre": "Lien de l'offre",
-        }
-    )
+    # Mise en forme pour le tableau
+    display_df = history_df.copy()
+    if "date_traitement" in display_df.columns:
+        display_df["date_traitement"] = pd.to_datetime(display_df["date_traitement"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
 
     st.dataframe(
-        table_df,
+        display_df,
         column_config={
-            "Lien de l'offre": st.column_config.LinkColumn(
-                "Lien de l'offre",
-                display_text="Consulter ↗",
-            ),
-            "Score /10": st.column_config.ProgressColumn(
-                "Score /10",
-                format="%d/10",
-                min_value=0,
-                max_value=10,
-            ),
+            "url_offre": st.column_config.LinkColumn("Lien offre", display_text="Consulter ↗"),
+            "score_coherence": st.column_config.ProgressColumn("Score /10", format="%d/10", min_value=0, max_value=10),
         },
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
 
-    st.write("---")
+    st.divider()
     st.subheader("📩 Lettres de motivation générées")
+
     has_letters = False
-
-    # Cartes modernes pour les lettres de motivation disponibles
-    for _, row in history.iterrows():
-        if str(row.get("lm_generee")).lower() != "oui" or not row.get("chemin_lm"):
-            continue
-
-        letter_content = read_letter_file(str(row["chemin_lm"]), user_id)
-        if not letter_content:
-            continue
-
-        has_letters = True
-        with st.container(border=True):
-            c_info, c_score, c_actions = st.columns([3, 1, 2])
-            
-            with c_info:
-                st.markdown(f"### **{row['titre']}**")
-                st.caption(f"🏢 **{row['entreprise']}**")
-            
-            with c_score:
-                st.metric("Score", f"{row['score_coherence']}/10")
-
-            with c_actions:
-                safe_title = sanitize_filename(str(row['titre']))
-                safe_company = sanitize_filename(str(row['entreprise']))
-                filename = f"LM_{safe_title}_{safe_company}.txt"
-
-                if row.get("url_offre"):
-                    st.link_button("🔗 Voir l'offre", str(row["url_offre"]), width="stretch")
-
-                st.download_button(
-                    label="📥 Télécharger la LM (.txt)",
-                    data=letter_content,
-                    file_name=filename,
-                    mime="text/plain",
-                    key=f"dl_{row['id']}",
-                    type="primary",
-                    width="stretch",
-                )
+    for entry in entries:
+        # Manipulation via l'objet ApplicationEntry
+        if getattr(entry, "lm_generee", False) and getattr(entry, "chemin_lm", None):
+            letter_content = repo.read_letter_file(entry.chemin_lm)
+            if letter_content:
+                has_letters = True
+                with st.container(border=True):
+                    c_info, c_score, c_actions = st.columns([3, 1, 2])
+                    with c_info:
+                        st.markdown(f"### **{entry.titre}**")
+                        st.caption(f"🏢 **{entry.entreprise}**")
+                    with c_score:
+                        st.metric("Score", f"{entry.score_coherence}/10")
+                    with c_actions:
+                        if getattr(entry, "url_offre", None):
+                            st.link_button("🔗 Offre", entry.url_offre, use_container_width=True)
+                        
+                        st.download_button(
+                            label="📥 Télécharger (.txt)",
+                            data=letter_content,
+                            file_name=f"LM_{entry.entreprise}_{entry.titre}.txt",
+                            mime="text/plain",
+                            key=f"dl_{entry.id}",
+                            type="primary",
+                            use_container_width=True,
+                        )
+                    
+                    with st.expander("👁️ Prévisualiser la lettre"):
+                        st.text_area("Contenu", value=letter_content, height=180, disabled=True, label_visibility="collapsed")
 
     if not has_letters:
-        st.caption("Aucune lettre de motivation disponible au téléchargement pour le moment.")
+        st.caption("Aucune lettre générée pour le moment.")
 
 
 # ==========================================
 # HEADER PRINCIPAL
 # ==========================================
 st.title("💼 JOBAGENT")
-st.caption("Assistant local intelligent — Scoring IA de profil & Génération de lettres sur-mesure")
+st.caption("Assistant IA local — Analyse d'offres & Génération de candidatures")
 st.divider()
 
 
 # ==========================================
-# SIDEBAR : CONFIGURATION & PARAMS
+# SIDEBAR : PARAMÈTRES & PROFIL
 # ==========================================
 with st.sidebar:
-    st.header("⚙️ Paramètres & Profil")
+    st.header("⚙️ Configuration")
 
-    # --- Section CV ---
-    st.subheader("1. Mon CV")
-    cv_file = st.file_uploader("Importer un CV (PDF)", type=["pdf"], help="Le texte extrait servira d'évaluation pour le scoring.")
+    # 1. Gestion du CV
+    st.subheader("1. Votre CV")
+    cv_file = st.file_uploader("Importer votre CV (PDF)", type=["pdf"])
     if cv_file is not None:
         try:
             extracted_cv = extract_text_from_pdf(cv_file.read())
             st.session_state.cv_text = extracted_cv
-            save_cv(extracted_cv, user_id)
-            st.toast("CV importé avec succès !", icon="✅")
-        except ValueError as exc:
-            st.error(str(exc))
+            repo.save_cv(extracted_cv)
+            st.toast("CV mis à jour avec succès !", icon="✅")
+        except Exception as exc:
+            st.error(f"Erreur d'extraction : {exc}")
 
     if st.session_state.cv_text:
-        st.success("CV prêt et chargé en mémoire", icon="🟢")
-        with st.popover("👁️ Examiner le texte extrait du CV", width="stretch"):
-            st.text_area(
-                "Aperçu du texte brut",
-                value=st.session_state.cv_text,
-                height=300,
-                disabled=True,
-            )
+        st.success("CV chargé et prêt", icon="🟢")
+        with st.popover("👁️ Aperçu du CV", use_container_width=True):
+            st.text_area("Texte extrait", value=st.session_state.cv_text, height=250, disabled=True)
 
     st.divider()
 
-    # --- Section LM Type ---
+    # 2. Modèle de Lettre (Optionnel)
     st.subheader("2. Modèle de Lettre (Optionnel)")
-    lm_file = st.file_uploader("Importer un modèle (TXT ou PDF)", type=["txt", "pdf"])
-    if lm_file is not None:
-        try:
-            if lm_file.name.endswith(".pdf"):
-                imported_lm = extract_text_from_pdf(lm_file.read())
-            else:
-                imported_lm = lm_file.read().decode("utf-8")
-
-            st.session_state.lm_template = imported_lm
-            save_lm_template(imported_lm, user_id)
-            st.toast("Modèle de lettre mis à jour !", icon="📄")
-        except Exception as exc:
-            st.error(f"Erreur d'importation LM : {exc}")
-
-    lm_template_input = st.text_area(
+    lm_input = st.text_area(
         "Modèle texte personnalisé",
         value=st.session_state.lm_template,
-        height=140,
-        placeholder="Collez ou adaptez votre trame de lettre type ici...",
+        height=120,
+        placeholder="Collez ou adaptez votre trame de lettre...",
     )
-
-    if lm_template_input != st.session_state.lm_template:
-        st.session_state.lm_template = lm_template_input
-        save_lm_template(lm_template_input, user_id)
+    if lm_input != st.session_state.lm_template:
+        st.session_state.lm_template = lm_input
+        repo.save_lm_template(lm_input)
 
     st.divider()
 
-    # --- Critères de génération ---
-    st.subheader("3. Moteur de Recherche")
-    keywords = st.text_input("Mots-clés", placeholder="Ex : Développeur Python")
-    location = st.text_input("Lieu", placeholder="Ex : Pau, Toulouse, 64000")
+    # 3. Critères de Recherche
+    st.subheader("3. Recherche d'emploi")
+    keywords = st.text_input("Mots-clés", placeholder="Ex : Développeur Web")
+    location = st.text_input("Lieu", placeholder="Ex : Pau, Toulouse")
     
     col_r, col_m = st.columns(2)
     with col_r:
@@ -278,127 +201,121 @@ with st.sidebar:
         step=0.5,
     )
 
-    auto_generate = st.toggle("Générer automatiquement la LM si le seuil est atteint", value=True)
+    auto_generate = st.toggle("Générer la LM si le score suffit", value=True)
 
-    can_process = bool(st.session_state.cv_text and st.session_state.cv_text.strip())
-    if not can_process:
-        st.warning("Veuillez importer un CV pour pouvoir lancer la recherche.")
+    can_launch = bool(st.session_state.cv_text and st.session_state.cv_text.strip())
+    if not can_launch:
+        st.warning("Veuillez d'abord importer votre CV.")
 
-    process_button = st.button(
+    btn_search = st.button(
         "🚀 Lancer la recherche",
         type="primary",
-        disabled=not can_process,
-        width="stretch",
+        disabled=not can_launch,
+        use_container_width=True,
     )
 
 
 # ==========================================
-# ZONE PRINCIPALE : EXECUTION DU MOTEUR
+# ZONE PRINCIPALE : TRAITEMENT DE LA RECHERCHE
 # ==========================================
-if process_button:
+if btn_search:
     if not keywords.strip():
-        st.error("Veuillez entrer au moins un mot-clé de recherche.")
+        st.error("Veuillez renseigner au moins un mot-clé.")
     else:
         try:
-            # 1. Charger et nettoyer la liste des URLs déjà enregistrées dans l'historique de cette session
-            history_df = load_history(user_id)
-            existing_urls = set()
-            if not history_df.empty and "url_offre" in history_df.columns:
-                existing_urls = {
-                    str(url).strip() 
-                    for url in history_df["url_offre"].dropna() 
-                    if str(url).strip()
-                }
+            # Récupération des URLs déjà traitées pour éviter les doublons
+            existing_entries = repo.load_history()
+            existing_urls = {
+                entry.url_offre.strip()
+                for entry in existing_entries
+                if getattr(entry, "url_offre", None)
+            }
 
-            with st.status("Recherche et analyse en cours...", expanded=True) as status:
-                st.write("🔍 Collecte des offres auprès des sources configurées...")
+            with st.status("Traitement en cours...", expanded=True) as status:
+                st.write("🔍 Collecte des offres depuis les sources...")
                 
-                offers = search_all_sources(
+                raw_offers = search_all_sources(
                     keywords=keywords,
                     location=location,
                     max_results=int(max_results),
                     distance=int(distance),
                 )
 
-                if not offers:
-                    st.warning("Aucune offre trouvée correspondant aux critères renseignés.")
-                    status.update(label="Recherche terminée — 0 résultat", state="complete")
+                if not raw_offers:
+                    st.warning("Aucune offre trouvée pour ces critères.")
+                    status.update(label="Recherche terminée (0 résultat)", state="complete")
                 else:
-                    st.write(f"🎯 **{len(offers)}** offre(s) identifiée(s). Traitement IA en cours...")
+                    # Conversion des dictionnaires reçus par l'orchestrateur en objets JobOffer
+                    job_offers = [
+                        JobOffer.from_dict(off) if hasattr(JobOffer, "from_dict") else JobOffer(**off)
+                        for off in raw_offers
+                    ]
+
+                    st.write(f"🎯 **{len(job_offers)}** offre(s) identifiée(s). Évaluation par l'IA...")
                     progress = st.progress(0)
-                    total = len(offers)
+                    total = len(job_offers)
 
-                    has_lm_template = bool(
-                        st.session_state.lm_template and st.session_state.lm_template.strip()
-                    )
+                    for idx, offer in enumerate(job_offers):
+                        offer_url = str(getattr(offer, "url_offre", "")).strip()
 
-                    new_offers_count = 0
-
-                    for index, offer in enumerate(offers):
-                        # Nettoyage de l'URL de l'offre actuelle
-                        offer_url = str(offer.get("url_offre", "")).strip()
-
-                        # 2. Vérification stricte : si l'URL existe déjà, on ignore
+                        # Anti-doublon
                         if offer_url and offer_url in existing_urls:
-                            st.write(
-                                f"⏭️ *Offre déjà analysée* : **{offer['titre']}** chez {offer['entreprise']}"
-                            )
-                            progress.progress((index + 1) / total)
+                            st.write(f"⏭️ *Déjà analysée* : **{offer.titre}** chez {offer.entreprise}")
+                            progress.progress((idx + 1) / total)
                             continue
 
-                        published_on = format_publication_date(offer.get("date_publication", ""))
-                        st.write(
-                            f"⚡ [{index + 1}/{total}] **{offer['titre']}** — *{offer['entreprise']}* ({published_on})"
-                        )
+                        st.write(f"⚡ [{idx + 1}/{total}] **{offer.titre}** — *{offer.entreprise}*")
 
+                        # Évaluation via scorer (prend l'objet JobOffer ou dict selon ton adaptation)
                         score, justification = score_coherence(
                             st.session_state.cv_text, offer
                         )
-                        st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;⭐ Score de correspondance : **{score}/10** | *{justification}*")
+                        st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;⭐ Score : **{score}/10** | *{justification}*")
 
                         entry_id = uuid.uuid4().hex[:8]
                         lm_path = ""
                         lm_generated = False
 
+                        # Génération de la LM si le score dépasse le seuil
                         if auto_generate and score >= score_threshold:
-                            if has_lm_template:
+                            if st.session_state.lm_template.strip():
                                 st.write("&nbsp;&nbsp;&nbsp;&nbsp;✍️ Rédaction de la lettre de motivation...")
                                 lm_path = generate_cover_letter(
                                     st.session_state.cv_text,
                                     offer,
                                     st.session_state.lm_template,
                                     entry_id,
-                                    user_id,  # Transmis si votre service gère le sous-dossier user_id
+                                    user_id,
                                 )
                                 lm_generated = True
-                            else:
-                                st.caption("&nbsp;&nbsp;&nbsp;&nbsp;ℹ️ Pas de modèle de lettre configuré : génération ignorée.")
 
-                        # Enregistrement dans l'historique propre à user_id
-                        append_entry(
-                            offer,
-                            score,
-                            lm_generated,
-                            lm_path,
-                            entry_id=entry_id,
-                            user_id=user_id,
+                        # Instanciation de l'objet ApplicationEntry
+                        entry = ApplicationEntry(
+                            id=entry_id,
+                            titre=offer.titre,
+                            entreprise=offer.entreprise,
+                            url_offre=offer.url_offre,
+                            date_publication=getattr(offer, "date_publication", ""),
+                            score_coherence=score,
+                            justification=justification,
+                            lm_generee=lm_generated,
+                            chemin_lm=lm_path,
                         )
 
-                        # 3. Mettre à jour le set local immédiatement pour éviter les doublons dans la même session
+                        # Enregistrement via le repository
+                        repo.append_entry(entry)
+
                         if offer_url:
                             existing_urls.add(offer_url)
 
-                        new_offers_count += 1
-                        progress.progress((index + 1) / total)
+                        progress.progress((idx + 1) / total)
 
-                    status.update(
-                        label=f"Traitement terminé avec succès ({new_offers_count} nouvelle(s) offre(s) ajoutée(s))",
-                        state="complete",
-                    )
-                    st.toast("Recherche terminée et historique mis à jour !", icon="🎉")
+                    status.update(label="Traitement et sauvegarde terminés !", state="complete")
+                    st.toast("Historique mis à jour !", icon="🎉")
+                    st.rerun()
 
         except Exception as exc:
             st.error(f"Une erreur est survenue pendant le traitement : {exc}")
 
-# Affichage du dashboard/historique spécifique à la session
-render_history_section(user_id)
+# Affichage du dashboard et de l'historique
+render_history_dashboard()

@@ -25,7 +25,7 @@ def get_groq_client() -> Groq:
     return Groq(api_key=api_key)
 
 
-def score_coherence(cv_text: str, offer: Dict[str, Any]) -> Tuple[float, str]:
+def score_coherence(cv_text: str, job: JobOffer) -> Tuple[float, str]:
     """Analyse l'adéquation entre le CV et l'offre via Groq (Llama 3.3)."""
     try:
         client = get_groq_client()
@@ -42,9 +42,9 @@ def score_coherence(cv_text: str, offer: Dict[str, Any]) -> Tuple[float, str]:
 {cv_text[:4000]}
 
 ### OFFRE D'EMPLOI :
-Titre : {offer.get('titre', '')}
-Entreprise : {offer.get('entreprise', '')}
-Description : {offer.get('description', '')[:3000]}
+Titre : {job.title}
+Entreprise : {job.company}
+Description : {job.description[:3000]}
 """
 
     try:
