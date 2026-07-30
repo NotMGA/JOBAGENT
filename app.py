@@ -266,11 +266,11 @@ if btn_search:
                         offer_url = str(getattr(offer, "url_offre", "")).strip()
 
                         if offer_url and offer_url in existing_urls:
-                            st.write(f"⏭️ *Déjà analysée* : **{offer.titre}** chez {offer.entreprise}")
+                            st.write(f"⏭️ *Déjà analysée* : **{offer.title}** chez {offer.company}")
                             progress.progress((idx + 1) / total)
                             continue
 
-                        st.write(f"⚡ [{idx + 1}/{total}] **{offer.titre}** — *{offer.entreprise}*")
+                        st.write(f"⚡ [{idx + 1}/{total}] **{offer.title}** — *{offer.company}*")
 
                         score, justification = score_coherence(
                             st.session_state.cv_text, offer
@@ -295,9 +295,9 @@ if btn_search:
 
                         entry = ApplicationEntry(
                             id=entry_id,
-                            titre=offer.titre,
-                            entreprise=offer.entreprise,
-                            url_offre=offer.url_offre,
+                            titre=offer.title,
+                            entreprise=offer.company,
+                            url_offre=offer.url,
                             date_publication=getattr(offer, "date_publication", ""),
                             score_coherence=score,
                             justification=justification,
