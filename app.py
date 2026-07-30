@@ -56,12 +56,15 @@ def render_history_dashboard():
         st.info("💡 Aucune recherche enregistrée. Définissez vos critères à gauche pour démarrer.")
         return
 
-    data = [entry.to_dict() if hasattr(entry, "to_dict") else entry.__dict__ for entry in entries]
+    # Conversion adaptée aux données exportées par to_csv_dict()
+    data = [entry.to_csv_dict() if hasattr(entry, "to_csv_dict") else entry.__dict__ for entry in entries]
     history_df = pd.DataFrame(data)
 
     total_offers = len(history_df)
     avg_score = round(history_df["score_coherence"].mean(), 1) if "score_coherence" in history_df and not history_df.empty else 0.0
-    total_lm = len(history_df[history_df["lm_generee"] == True]) if "lm_generee" in history_df else 0
+    
+    # Prise en compte de 'oui' ou True pour les lettres générées
+    total_lm = len(history_df[history_df["lm_generee"].isin([True, "oui"])]) if "lm_generee" in history_df else 0
 
     col1, col2, col3 = st.columns(3)
     col1.metric("📊 Offres analysées", total_offers)
@@ -98,25 +101,25 @@ def render_history_dashboard():
 
     has_letters = False
     for entry in entries:
-        if getattr(entry, "lm_generee", False) and getattr(entry, "chemin_lm", None):
-            letter_content = repo.read_letter(entry.chemin_lm)
+        if entry.cover_letter_generated and entry.cover_letter_path:
+            letter_content = repo.read_letter(entry.cover_letter_path)
             if letter_content:
                 has_letters = True
                 with st.container(border=True):
                     c_info, c_score, c_actions = st.columns([3, 1, 2])
                     with c_info:
-                        st.markdown(f"### **{entry.titre}**")
-                        st.caption(f"🏢 **{entry.entreprise}**")
+                        st.markdown(f"### **{entry.job.title}**")
+                        st.caption(f"🏢 **{entry.job.company}**")
                     with c_score:
-                        st.metric("Score", f"{entry.score_coherence}/10")
+                        st.metric("Score", f"{entry.coherence_score}/10")
                     with c_actions:
-                        if getattr(entry, "url_offre", None):
-                            st.link_button("🔗 Offre", entry.url_offre, use_container_width=True)
+                        if entry.job.url:
+                            st.link_button("🔗 Offre", entry.job.url, use_container_width=True)
                         
                         st.download_button(
                             label="📥 Télécharger (.txt)",
                             data=letter_content,
-                            file_name=f"LM_{entry.entreprise}_{entry.titre}.txt",
+                            file_name=f"LM_{entry.job.company}_{entry.job.title}.txt",
                             mime="text/plain",
                             key=f"dl_{entry.id}",
                             type="primary",
@@ -163,7 +166,7 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. Modèle de Lettre (Optionnel) — REAJOUT DU BOUTON D'IMPORTATION
+    # 2. Modèle de Lettre (Optionnel)
     st.subheader("2. Modèle de Lettre (Optionnel)")
     lm_file = st.file_uploader("Importer un modèle (TXT ou PDF)", type=["txt", "pdf"], key="lm_uploader")
     if lm_file is not None:
@@ -187,7 +190,7 @@ with st.sidebar:
     )
     if lm_input != st.session_state.lm_template:
         st.session_state.lm_template = lm_input
-        repo.save_lm_template(lm_input, user_id=user_id) # FixNameError: 'text' -> 'lm_input'
+        repo.save_lm_template(lm_input, user_id=user_id)
 
     st.divider()
 
@@ -234,9 +237,9 @@ if btn_search:
         try:
             existing_entries = repo.load_history(user_id=user_id)
             existing_urls = {
-                entry.url_offre.strip()
+                entry.job.url.strip()
                 for entry in existing_entries
-                if getattr(entry, "url_offre", None)
+                if getattr(entry, "job", None) and entry.job.url
             }
 
             with st.status("Traitement en cours...", expanded=True) as status:
@@ -263,7 +266,7 @@ if btn_search:
                     total = len(job_offers)
 
                     for idx, offer in enumerate(job_offers):
-                        offer_url = str(getattr(offer, "url_offre", "")).strip()
+                        offer_url = str(offer.url).strip()
 
                         if offer_url and offer_url in existing_urls:
                             st.write(f"⏭️ *Déjà analysée* : **{offer.title}** chez {offer.company}")
@@ -293,16 +296,13 @@ if btn_search:
                                 )
                                 lm_generated = True
 
+                        # Instanciation conforme au modèle ApplicationEntry
                         entry = ApplicationEntry(
                             id=entry_id,
-                            titre=offer.title,
-                            entreprise=offer.company,
-                            url_offre=offer.url,
-                            date_publication=getattr(offer, "date_publication", ""),
-                            score_coherence=score,
-                            justification=justification,
-                            lm_generee=lm_generated,
-                            chemin_lm=lm_path,
+                            job=offer,
+                            coherence_score=score,
+                            cover_letter_generated=lm_generated,
+                            cover_letter_path=lm_path,
                         )
 
                         repo.append_entry(entry, user_id=user_id)
