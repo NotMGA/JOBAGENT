@@ -8,7 +8,7 @@ from config import DEFAULT_SCORE_THRESHOLD
 
 # --- IMPORTS DES 3 NOUVEAUX FICHIERS ---
 from models import ApplicationEntry, JobOffer
-from file_repository import FileStorageRepository  # Hérite de base.py pour le stockage local / fichiers
+from repositories.file_repository import FileStorageRepository  # Hérite de base.py pour le stockage local / fichiers
 
 # --- IMPORTS DES SERVICES ADAPTÉS ---
 from services.job_search_orchestrator import search_all_sources
