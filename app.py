@@ -41,8 +41,9 @@ repo = FileStorageRepository()
 
 # Synchronisation du state Streamlit avec le repository
 if "cv_text" not in st.session_state or "lm_template" not in st.session_state:
-    st.session_state.cv_text = repo.get_user_cv() or ""
-    st.session_state.lm_template = repo.get_user_lm_template() or ""
+    profile = repo.get_profile(user_id=user_id)
+    st.session_state.cv_text = profile.cv_text or ""
+    st.session_state.lm_template = profile.lm_template_text or ""
 
 
 # ==========================================
@@ -50,7 +51,7 @@ if "cv_text" not in st.session_state or "lm_template" not in st.session_state:
 # ==========================================
 def render_history_dashboard():
     # Récupération sous forme de liste d'objets ApplicationEntry
-    entries = repo.load_history()
+    entries = repo.load_history(user_id=user_id)
 
     if not entries:
         st.info("💡 Aucune recherche enregistrée. Définissez vos critères à gauche pour démarrer.")
@@ -78,7 +79,7 @@ def render_history_dashboard():
         st.subheader("📋 Historique des candidatures")
     with col_clear:
         if st.button("🗑️ Effacer l'historique", use_container_width=True):
-            repo.clear_history()
+            repo.clear_history(user_id=user_id)
             st.toast("Historique réinitialisé !", icon="🧹")
             st.rerun()
 
@@ -104,7 +105,7 @@ def render_history_dashboard():
     for entry in entries:
         # Manipulation via l'objet ApplicationEntry
         if getattr(entry, "lm_generee", False) and getattr(entry, "chemin_lm", None):
-            letter_content = repo.read_letter_file(entry.chemin_lm)
+            letter_content = repo.read_letter(entry.chemin_lm)
             if letter_content:
                 has_letters = True
                 with st.container(border=True):
@@ -156,7 +157,7 @@ with st.sidebar:
         try:
             extracted_cv = extract_text_from_pdf(cv_file.read())
             st.session_state.cv_text = extracted_cv
-            repo.save_cv(extracted_cv)
+            repo.save_cv(text, user_id=user_id)
             st.toast("CV mis à jour avec succès !", icon="✅")
         except Exception as exc:
             st.error(f"Erreur d'extraction : {exc}")
@@ -178,7 +179,7 @@ with st.sidebar:
     )
     if lm_input != st.session_state.lm_template:
         st.session_state.lm_template = lm_input
-        repo.save_lm_template(lm_input)
+        repo.save_lm_template(text, user_id=user_id)
 
     st.divider()
 
@@ -224,7 +225,7 @@ if btn_search:
     else:
         try:
             # Récupération des URLs déjà traitées pour éviter les doublons
-            existing_entries = repo.load_history()
+            existing_entries = repo.load_history(user_id=user_id)
             existing_urls = {
                 entry.url_offre.strip()
                 for entry in existing_entries
@@ -303,7 +304,7 @@ if btn_search:
                         )
 
                         # Enregistrement via le repository
-                        repo.append_entry(entry)
+                        repo.append_entry(entry, user_id=user_id)
 
                         if offer_url:
                             existing_urls.add(offer_url)
