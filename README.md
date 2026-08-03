@@ -3,7 +3,11 @@
 **JOBAGENT** est un assistant IA local développé avec Streamlit et Python. Il automatise le processus de recherche d'emploi en collectant des offres depuis différentes sources, en évaluant leur cohérence avec votre CV via un LLM, et en générant automatiquement des lettres de motivation personnalisées.
 
 ---
+## Lien du site 
 
+- https://jobagentmvp.streamlit.app/
+
+---
 ## 🚀 Fonctionnalités Principales
 
 - 🔍 **Agrégation d'Offres :** Recherche multi-sources basée sur vos mots-clés, localisation et rayon géographique.
