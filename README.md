@@ -1,96 +1,43 @@
-# JOBAGENT
+# 💼 JOBAGENT — Assistant Intelligents de Candidature
 
-Application web locale en Python (Streamlit) pour automatiser la recherche d'offres d'emploi, évaluer la cohérence CV/offre via Ollama, et générer des lettres de motivation personnalisées.
+**JOBAGENT** est un assistant IA local développé avec Streamlit et Python. Il automatise le processus de recherche d'emploi en collectant des offres depuis différentes sources, en évaluant leur cohérence avec votre CV via un LLM, et en générant automatiquement des lettres de motivation personnalisées.
 
-## Fonctionnalités
+---
 
-- Import de CV au format PDF
-- Saisie ou import d'une lettre de motivation type
-- Toggle et seuil de score modifiable pour activer la génération automatique de LM
-- Recherche des X dernières offres publiées via l'API France Travail (tri par date décroissante)
-- Scoring de cohérence CV/offre via Ollama (LLM local)
-- Historique persistant dans `historique_candidatures.csv`
-- Téléchargement des lettres générées
+## 🚀 Fonctionnalités Principales
 
-## Prérequis
+- 🔍 **Agrégation d'Offres :** Recherche multi-sources basée sur vos mots-clés, localisation et rayon géographique.
+- 🎯 **Scoring de Cohérence IA :** Évaluation automatique (score sur 10 + justification) entre votre CV et l'offre d'emploi.
+- ✍️ **Génération Automatique de Lettres :** Rédaction de lettres de motivation adaptées aux compétences demandées et basées sur votre propre modèle/trame.
+- 📊 **Tableau de Bord & Historique :** Suivi dynamique des candidatures analysées, dédoublonnage automatique des URLs déjà traitées et exportation CSV.
+- 📁 **Gestion de Profil :** Importation et sauvegarde locale de votre CV (PDF) et de vos trames de lettre.
 
-1. **Python 3.10+**
-2. **Ollama** installé et démarré :
-   ```bash
-   ollama serve
-   ollama pull llama3.2
-   ```
-3. **Clé API France Travail** (gratuite) : [francetravail.io](https://francetravail.io)
+---
 
-## Installation
+## 🛠️ Spécifications Techniques & Stack
 
-```bash
-cd D:\DEV\JOBAGENT
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+- **Frontend / UI :** [Streamlit](https://streamlit.io/)
+- **Data Validation & Modèles :** [Pydantic v2](https://docs.pydantic.dev/)
+- **Traitement de Données :** [Pandas](https://pandas.pydata.org/)
+- **Parsing PDF :** PyPDF / pdfplumber
+- **Langage :** Python 3.10+
 
-Copiez `.env.example` vers `.env` et renseignez vos identifiants :
+---
 
-```bash
-copy .env.example .env
-```
+## 📂 Structure du Projet
 
-```env
-FRANCE_TRAVAIL_CLIENT_ID=votre_client_id
-FRANCE_TRAVAIL_CLIENT_SECRET=votre_client_secret
-```
-
-## Lancement
-
-```bash
-streamlit run app.py
-```
-
-L'application s'ouvre dans le navigateur à l'adresse `http://localhost:8501`.
-
-## Utilisation
-
-1. Importez votre CV (PDF) dans la barre latérale
-2. Collez ou importez votre lettre de motivation type
-3. Activez ou désactivez la génération automatique (seuil : score >= 7)
-4. Renseignez les mots-clés, le lieu et le nombre de **dernières offres** à traiter
-5. Cliquez sur **Lancer le traitement**
-6. Consultez l'historique et téléchargez les lettres générées
-
-## Structure du projet
-
-```
-JOBAGENT/
-├── app.py                          # Interface Streamlit
-├── config.py                       # Configuration
-├── requirements.txt
-├── historique_candidatures.csv     # Historique (créé au runtime)
+```text
+.
+├── app.py                            # Interface Streamlit et logique principale
+├── models.py                         # Modèles de données Pydantic (JobOffer, ApplicationEntry, UserProfile)
+├── config.py                         # Configuration globale (seuils, constantes)
+├── style.css                         # Custom CSS pour Streamlit (optionnel)
+├── repositories/
+│   └── file_repository.py            # Gestion de la persistance locale (historique, CV, modèles)
 ├── services/
-│   ├── pdf_parser.py
-│   ├── job_search.py
-│   ├── scorer.py
-│   ├── lm_generator.py
-│   └── history_store.py
-└── data/
-    └── lettres/                    # Lettres générées
-```
+│   ├── job_search_orchestrator.py   # Orchestration de la collecte multi-sources d'offres
+│   ├── lm_generator.py               # Génération de lettres de motivation
+│   ├── pdf_parser.py                 # Extraction de texte à partir des fichiers PDF
+│   └── scorer.py                     # Algorithme/Prompt de scoring de cohérence
+└── data/                             # Stockage local des historiques et fichiers générés
 
-## Fichier CSV
-
-Le fichier `historique_candidatures.csv` contient :
-
-| Colonne | Description |
-|---------|-------------|
-| id | Identifiant unique |
-| date_traitement | Date du traitement |
-| date_publication | Date de publication de l'offre |
-| titre | Titre du poste |
-| entreprise | Nom de l'employeur |
-| lieu | Localisation |
-| url_offre | Lien vers l'offre |
-| score_coherence | Note de 0 à 10 |
-| lm_generee | oui / non |
-| chemin_lm | Chemin vers la lettre générée |
-| description_offre | Extrait de l'offre |
